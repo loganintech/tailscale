@@ -12,7 +12,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
+	"sync"
 
 	"golang.org/x/sys/unix"
 	"tailscale.com/util/lineread"
@@ -48,7 +50,22 @@ func linuxDeviceModel() string {
 	return ""
 }
 
+var qnapRegexOnce sync.Once
+var qnapRegex *regexp.Regexp
+
+func getQnapQtsVersion(version_info string) string {
+	qnapRegexOnce.Do(func() {
+		qnapRegex = regexp.MustCompile(`QTSFW_([\d.]+)`)
+	})
+	match := qnapRegex.FindStringSubmatch(version_info)
+	if match == nil {
+		return ""
+	}
+	return "QTS " + match[1]
+}
+
 func osVersionLinux() string {
+	// TODO(bradfitz,dgentry): cache this, or make caller(s) cache it.
 	dist := distro.Get()
 	propFile := "/etc/os-release"
 	switch dist {
@@ -59,6 +76,9 @@ func osVersionLinux() string {
 	case distro.WDMyCloud:
 		slurp, _ := ioutil.ReadFile("/etc/version")
 		return fmt.Sprintf("%s", string(bytes.TrimSpace(slurp)))
+	case distro.QNAP:
+		slurp, _ := ioutil.ReadFile("/etc/version_info")
+		return getQnapQtsVersion(string(slurp))
 	}
 
 	m := map[string]string{}
